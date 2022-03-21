@@ -4,6 +4,7 @@ Created on Mon Nov 29 10:36:57 2021
 
 @author: Bill
 """
+
 import sys
 import json
 import pickle
@@ -28,7 +29,9 @@ from keras.layers.merge import dot
 import math
 import annoy
 from annoy import AnnoyIndex
-
+import pandas as pd
+#提前計算user-item_list(要有) 但是新用戶沒有數據  
+#線上實時計算 建樹據類-相似區域
 
 class chat:
     def __init__(self):
@@ -38,9 +41,10 @@ class chat:
         self.t=0
         self.input_length=10	
         
-        with open("all_answers",'r',encoding='utf-8') as f:
-            lines=f.readlines() 
-        self.index_answer=dict([line.strip().split("\t") for line in lines]) #字典的dic新增 用列表表達式    
+        ans=pd.read_csv('all_answers', encoding='utf-8',delim_whitespace=True,names=['n','a'])
+        ans=ans.dropna().reset_index(drop=True)#去除不完整數據
+        self.index_answer=dict(zip(ans['n'],ans['a'])) 
+        
         with open("hanzi_index",'r',encoding='utf-8') as f:
             self.hanzi_index=json.load(f)
         self.model=load_model("q_model.h5",custom_objects={'MultiHeadAttention':keras_multi_head.MultiHeadAttention},compile=False)
@@ -48,8 +52,8 @@ class chat:
         f = 16
         self.t = AnnoyIndex(f, 'angular') 
         self.t.load("annoy_model")
-
-    def normal(self,vector):
+        
+    def normal(vector):
         ss=math.sqrt(sum([s*s for s in vector]))
         return [s/ss for s in vector]    
         
@@ -59,8 +63,8 @@ class chat:
         sent=msg
         sent_index=np.array([[self.hanzi_index[s] for s in sent if s in self.hanzi_index ]])
         sent_index=keras.preprocessing.sequence.pad_sequences(sent_index, maxlen=self.input_length, value=0.,padding='post')#只能接受长度相等的序列输入
-        vector=self.model.predict(sent_index).tolist()[0]
-        vector=chat.normal(self,vector) #`类` 是模板，`对象` 是根据 `类` 这个模板创建出来的，应该先有类，再有对象    #實例方法 1.实例对象调用2.以类名称调用:類.方法(需傳遞實例參數self) 即實例化後的對象     
+        vector=self.model.predict(sent_index).tolist()[0] #新句是舊的組成
+        vector=chat.normal(vector)
         result=self.t.get_nns_by_vector(vector,10, search_k=-1, include_distances=False)
         result=[i for i in result]
         result=random.sample(result,1)
@@ -70,4 +74,14 @@ class chat:
     
 if __name__ == '__main__':
     CHAT=chat() 
-    print(CHAT.chat_reply('你是誰'))                    
+    print(CHAT.chat_reply('请问鱼的耳朵'))             
+
+
+'''
+召回:多  快
+
+向量計算
+在線:對新用戶友好 ----annoy檢索logn
+離線:速度快--------- 事先建表
+
+'''       
